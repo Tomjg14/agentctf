@@ -53,6 +53,7 @@ class HybridEvaluator:
                 temperature=0.0,
             )
             assistant_msg = response.choices[0].message.content
+            print(f"\n[Evaluator LLM Step {i+1}/5] Output:\n{assistant_msg}\n")
             messages.append({"role": "assistant", "content": assistant_msg})
 
             # Check if a verification command needs to be executed
