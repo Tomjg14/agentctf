@@ -2,6 +2,7 @@
 
 import os
 import uuid
+import time
 import uvicorn
 import dotenv
 from litellm import completion
@@ -65,7 +66,7 @@ class SecurityWhiteAgentExecutor(AgentExecutor):
             ]
 
         # Truncate long terminal outputs to prevent context window overflow
-        MAX_INPUT_LENGTH = 8000
+        MAX_INPUT_LENGTH = 4000
         if len(user_input) > MAX_INPUT_LENGTH:
             print(f"[WhiteAgent] Truncating input from {len(user_input)} to {MAX_INPUT_LENGTH} chars")
             user_input = user_input[:MAX_INPUT_LENGTH] + "\n...[TRUNCATED]..."
@@ -73,12 +74,26 @@ class SecurityWhiteAgentExecutor(AgentExecutor):
         messages = self.ctx_id_to_messages[ctx_id]
         messages.append({"role": "user", "content": user_input})
 
-        # Call LLM
+        # Call LLM with retry mechanism for rate limits
         print(f"[WhiteAgent] Calling LLM (context: {ctx_id[:8]}...)...")
-        response = completion(
-            messages=messages,
-            model=self.model,
-        )
+        
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                response = completion(
+                    messages=messages,
+                    model=self.model,
+                )
+                break
+            except Exception as e:
+                if "RateLimit" in str(e) or "429" in str(e):
+                    wait_time = (2 ** attempt) * 10
+                    print(f"[WhiteAgent] Rate limit hit. Waiting {wait_time}s before retry {attempt + 1}/{max_retries}...")
+                    time.sleep(wait_time)
+                else:
+                    raise e
+        else:
+            raise Exception("Max retries exceeded due to rate limits.")
 
         assistant_message = response.choices[0].message.content or ""
         messages.append({"role": "assistant", "content": assistant_message})

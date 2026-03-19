@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import time
 from litellm import completion
 import dotenv
 
@@ -47,11 +48,25 @@ class HybridEvaluator:
         max_iterations = 5
 
         for i in range(max_iterations):
-            response = completion(
-                messages=messages,
-                model=self.model,
-                temperature=0.0,
-            )
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    response = completion(
+                        messages=messages,
+                        model=self.model,
+                        temperature=0.0,
+                    )
+                    break
+                except Exception as e:
+                    if "RateLimit" in str(e) or "429" in str(e):
+                        wait_time = (2 ** attempt) * 10
+                        print(f"[Evaluator] Rate limit hit. Waiting {wait_time}s before retry {attempt + 1}/{max_retries}...")
+                        time.sleep(wait_time)
+                    else:
+                        raise e
+            else:
+                raise Exception("Max retries exceeded due to rate limits.")
+
             assistant_msg = response.choices[0].message.content
             print(f"\n[Evaluator LLM Step {i+1}/5] Output:\n{assistant_msg}\n")
             messages.append({"role": "assistant", "content": assistant_msg})
